@@ -9,6 +9,7 @@ class IntersectionOverUnionTracker:
         # Store the bounding box points from the cars
         self.bb_points = {}
         self.bb_sizes = {}
+        self.bb_distance = {}
         # Keep the count of the IDs
         # each time a new car is detected, the count will increase by one
         self.id_count = 0
@@ -112,7 +113,7 @@ class IntersectionOverUnionTracker:
             plt.clf()
             slope = np.gradient(y)
             plt.plot(x, slope)
-            plt.savefig(f"{save_dir}/Slope car {car_id}.png")
+            plt.savefig(f"{save_dir}/Area derivative car {car_id}.png")
             plt.clf()
 
     def get_distance_in_frame(self, id, video_lanes):
@@ -127,7 +128,7 @@ class IntersectionOverUnionTracker:
         lane_points = [[(rect_lane[0][0] + rect_lane[1][0]) // 2, (rect_lane[0][1] + rect_lane[1][1]) // 2],
                        [(rect_lane[0][2] + rect_lane[1][2]) // 2, (rect_lane[0][3] + rect_lane[1][3]) // 2]]
         lane = LineString(lane_points)
-        return c_car.distance(lane) / car.area
+        return (c_car.distance(lane) * c_car.distance(lane)) / car.area
 
     def get_vehicle_label_points(self, vehicle, image, line_thickness=3):
         car_id = self.__add_car(vehicle, None, check_only=True)
