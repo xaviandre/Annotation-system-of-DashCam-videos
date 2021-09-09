@@ -189,22 +189,22 @@ def process_frame(frame, left_parameters, right_parameters, video_lanes, draw_li
     return left_params, right_params, lanes
 
 
-cap = cv.VideoCapture("data/videos/test2.mp4")
-left_param = None
-right_param = None
-video_lane = list()
-
-while cap.isOpened():
-    ret, f = cap.read()
-
-    if ret is True:
-        output, left_param, right_param, video_lane = process_frame(f, left_param, right_param, video_lane)
-        if len(video_lane) > 0:
-            visualize_lines(output, video_lane[-1])
-        if cv.waitKey(10) & 0xFF == ord('q'):
-            break
-    else:
-        break
-
-cap.release()
-cv.destroyAllWindows()
+# cap = cv.VideoCapture("data/videos/test2.mp4")
+# left_param = None
+# right_param = None
+# video_lane = list()
+#
+# while cap.isOpened():
+#     ret, f = cap.read()
+#
+#     if ret is True:
+#         output, left_param, right_param, video_lane = process_frame(f, left_param, right_param, video_lane)
+#         if len(video_lane) > 0:
+#             visualize_lines(output, video_lane[-1])
+#         if cv.waitKey(10) & 0xFF == ord('q'):
+#             break
+#     else:
+#         break
+#
+# cap.release()
+# cv.destroyAllWindows()
