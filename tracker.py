@@ -4,26 +4,20 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import lfilter
 
-plot_car_id = 12
-
 
 class IntersectionOverUnionTracker:
     def __init__(self):
-        # Store the bounding box points from the cars
-        self.bb_points = {}
-        self.bb_areas = {}
-        self.bb_distances = {}
-        self.bb_intersections = {}
-        # Keep the count of the IDs
-        # each time a new car is detected, the count will increase by one
-        self.id_count = 0
-        self.id_count_check = 0
+        # Store the bounding boxes' features
+        self.__bb_points, self.__bb_areas, self.__bb_distances, self.__bb_intersections = {}, {}, {}, {}
+        self.__bb_area_variance, self.__bb_distance_variance = {}, {}
+        # Keep the count of the IDs each time a new car is detected, the count will increase by one
+        self.__id_count, self.__id_count_check = 0, 0
 
     def __add_car(self, vehicle, bbs_ids, check_only=False):
         car = Polygon(vehicle)
         car = car.buffer(0)
 
-        for car_id, car_points in self.bb_points.items():
+        for car_id, car_points in self.__bb_points.items():
             existent_car = Polygon(car_points)
             existent_car = existent_car.buffer(0)
             intersection = car.intersection(existent_car)
@@ -35,17 +29,17 @@ class IntersectionOverUnionTracker:
                 if check_only:
                     return car_id
                 else:
-                    self.bb_points[car_id] = vehicle
+                    self.__bb_points[car_id] = vehicle
                     bbs_ids.append([vehicle, car_id])
                     return bbs_ids
 
         # If the car does not exist, assign new ID to the car
         if check_only:
-            return self.id_count
+            return self.__id_count
         else:
-            self.bb_points[self.id_count] = vehicle
-            bbs_ids.append([vehicle, self.id_count])
-            self.id_count += 1
+            self.__bb_points[self.__id_count] = vehicle
+            bbs_ids.append([vehicle, self.__id_count])
+            self.__id_count += 1
             return bbs_ids
 
     def update(self, image, curr_frame_idx, detected_cars, video_lanes, line_thickness=3, plot_cars=True):
@@ -61,11 +55,11 @@ class IntersectionOverUnionTracker:
             # Clean the dictionary by removing IDs not used anymore
             new_bb_points = {}
             for vertices, car_id in car_bbs_ids:
-                points = self.bb_points[car_id]
+                points = self.__bb_points[car_id]
                 new_bb_points[car_id] = points
 
             # Update dictionary with non used IDs removed
-            self.bb_points = new_bb_points.copy()
+            self.__bb_points = new_bb_points.copy()
 
             if plot_cars:
                 self.__plot_car_ids(image, line_thickness)
@@ -74,103 +68,130 @@ class IntersectionOverUnionTracker:
 
     def __save_bb_features(self, curr_frame_idx, video_lanes):
         # Fill the bounding box sizes list of the non present cars with None or the bb area for existing cars
-        if len(self.bb_areas) > 0:
+        if len(self.__bb_areas) > 0:
             # Get the IDs of the new cars in the present frame
-            new_car_ids = list(set(self.bb_points.keys()) - set(self.bb_areas.keys()))
+            new_car_ids = list(set(self.__bb_points.keys()) - set(self.__bb_areas.keys()))
             # Fill the lists with the bb area or None, when the car is no longer present in the frame
-            for car_id in self.bb_areas.keys():
-                car_area = None
-                car_distance = None
-                car_intersection = None
-                if car_id in self.bb_points.keys():
-                    car = self.bb_points[car_id]
+            for car_id in self.__bb_areas.keys():
+                car_area, car_distance, car_intersection = None, None, None
+                if car_id in self.__bb_points.keys():
+                    car = self.__bb_points[car_id]
                     car_bb = Polygon(car)
                     car_area = car_bb.area
                     car_distance = get_distance_in_frame(car, car_area, video_lanes)
                     car_intersection = get_intersection_value(car, video_lanes)
-                self.bb_areas[car_id].append(car_area)
-                self.bb_distances[car_id].append(car_distance)
-                self.bb_intersections[car_id].append(car_intersection)
+                self.__bb_areas[car_id].append(car_area)
+                self.__bb_distances[car_id].append(car_distance)
+                self.__bb_intersections[car_id].append(car_intersection)
 
             # Add to the bb sizes dictionary the new cars present in the current frame
             for car_id in new_car_ids:
-                car = self.bb_points[car_id]
+                car = self.__bb_points[car_id]
                 car_bb = Polygon(car)
                 car_area = car_bb.area
                 bb_size = [None] * (curr_frame_idx - 1)
                 bb_size.append(car_area)
-                self.bb_areas[car_id] = bb_size
+                self.__bb_areas[car_id] = bb_size
 
                 car_distance = get_distance_in_frame(car, car_area, video_lanes)
                 bb_distance = [None] * (curr_frame_idx - 1)
                 bb_distance.append(car_distance)
-                self.bb_distances[car_id] = bb_distance
+                self.__bb_distances[car_id] = bb_distance
 
                 car_intersection = get_intersection_value(car, video_lanes)
                 bb_intersection = [None] * (curr_frame_idx - 1)
                 bb_intersection.append(car_intersection)
-                self.bb_intersections[car_id] = bb_intersection
+                self.__bb_intersections[car_id] = bb_intersection
 
         # In case there are still no car bb sizes added to the dictionary
         else:
-            for car_id, bb in self.bb_points.items():
-                car = self.bb_points[car_id]
+            for car_id in self.__bb_points.keys():
+                car = self.__bb_points[car_id]
                 car_bb = Polygon(car)
                 car_area = car_bb.area
                 bb_size = [None] * (curr_frame_idx - 1)
                 bb_size.append(car_area)
-                self.bb_areas[car_id] = bb_size
+                self.__bb_areas[car_id] = bb_size
 
                 car_distance = get_distance_in_frame(car, car_area, video_lanes)
                 bb_distance = [None] * (curr_frame_idx - 1)
                 bb_distance.append(car_distance)
-                self.bb_distances[car_id] = bb_distance
+                self.__bb_distances[car_id] = bb_distance
 
                 car_intersection = get_intersection_value(car, video_lanes)
                 bb_intersection = [None] * (curr_frame_idx - 1)
                 bb_intersection.append(car_intersection)
-                self.bb_intersections[car_id] = bb_intersection
+                self.__bb_intersections[car_id] = bb_intersection
 
-    def get_bb_area_variance(self, save_dir):
-        if plot_car_id in self.bb_areas.keys():
-            bb_area_values = self.bb_areas[plot_car_id]
-            bb_distance_values = self.bb_distances[plot_car_id]
-            bb_intersection_values = self.bb_intersections[plot_car_id]
+    def get_features_variance(self):
+        for car_id in self.__bb_areas.keys():
+            bb_area_values = self.__bb_areas[car_id]
+            bb_distance_values = self.__bb_distances[car_id]
 
-            i = 0
-            x = list()
-            y_area = list()
-            y_distance = list()
-            y_intersection = list()
-            for bb_value in bb_area_values:
-                if bb_value is not None:
+            i, x, y_area, y_distance = 0, list(), list(), list()
+            for bb_area_value in bb_area_values:
+                if bb_area_value is not None:
                     x.append(i)
-                    y_area.append(bb_value)
+                    y_area.append(bb_area_value)
                     y_distance.append(bb_distance_values[i])
-                    y_intersection.append(bb_intersection_values[i])
                 i += 1
 
-            plt.plot(x, y_area)
-            plt.savefig(f"{save_dir}/Area car {plot_car_id}.png")
-            plt.clf()
+            if len(x) > 1:
+                n = 50  # the larger n is, the smoother curve will be
+                b = [1.0 / n] * n
+                yy_area = lfilter(b, 1, np.gradient(y_area))
+                yy_distance = lfilter(b, 1, np.gradient(y_distance))
 
-            plt.plot(x, y_distance)
-            plt.savefig(f"{save_dir}/Distance car {plot_car_id}.png")
-            plt.clf()
+                bb_area_variance_values = bb_area_values.copy()
+                bb_distance_variance_values = bb_distance_values.copy()
 
-            plt.plot(x, y_intersection)
-            plt.savefig(f"{save_dir}/Intersection car {plot_car_id}.png")
-            plt.clf()
+                i1, i2 = 0, 0
+                for bb_area_value in bb_area_values:
+                    if bb_area_value is not None:
+                        bb_area_variance_values[i2] = yy_area[i1]
+                        bb_distance_variance_values[i2] = yy_distance[i1]
+                        i1 += 1
+                    i2 += 1
 
-            n = 50  # the larger n is, the smoother curve will be
-            b = [1.0 / n] * n
+                self.__bb_area_variance[car_id] = bb_area_variance_values
+                self.__bb_distance_variance[car_id] = bb_distance_variance_values
 
-            yy_area = lfilter(b, 1, np.gradient(y_area))
+    def plot_features(self, save_dir, plot_car_id):
+        bb_area_values = self.__bb_areas[plot_car_id]
+        bb_distance_values = self.__bb_distances[plot_car_id]
+        bb_intersection_values = self.__bb_intersections[plot_car_id]
+        bb_area_variance_values = self.__bb_area_variance[plot_car_id]
+        bb_distance_variance_values = self.__bb_distance_variance[plot_car_id]
+
+        i, x, y_area, y_distance, y_intersection, yy_area, yy_distance = 0, list(), list(), list(), list(), list(), list()
+        for bb_value in bb_area_values:
+            if bb_value is not None:
+                x.append(i)
+                y_area.append(bb_value)
+                y_distance.append(bb_distance_values[i])
+                y_intersection.append(bb_intersection_values[i])
+                yy_area.append(bb_area_variance_values[i])
+                yy_distance.append(bb_distance_variance_values[i])
+            i += 1
+
+        plt.plot(x, y_area)
+        plt.savefig(f"{save_dir}/Area car {plot_car_id}.png")
+        plt.clf()
+
+        plt.plot(x, y_distance)
+        plt.savefig(f"{save_dir}/Distance car {plot_car_id}.png")
+        plt.clf()
+
+        plt.plot(x, y_intersection)
+        plt.savefig(f"{save_dir}/Intersection car {plot_car_id}.png")
+        plt.clf()
+
+        if yy_area:
             plt.plot(x, yy_area)
             plt.savefig(f"{save_dir}/Area derivative car {plot_car_id}.png")
             plt.clf()
 
-            yy_distance = lfilter(b, 1, np.gradient(y_distance))
+        if yy_distance:
             plt.plot(x, yy_distance)
             plt.savefig(f"{save_dir}/Distance derivative car {plot_car_id}.png")
             plt.clf()
@@ -188,11 +209,11 @@ class IntersectionOverUnionTracker:
         return car_label_coords, car_label_rect_coords
 
     def __plot_car_ids(self, image, line_thickness):
-        if len(self.bb_points) > 0:
+        if len(self.__bb_points) > 0:
             tl = line_thickness or round(0.002 * (image.shape[0] + image.shape[1]) / 2) + 1  # line/font thickness
             tf = max(tl - 1, 1)  # font thickness
 
-            for car_id, car_points in self.bb_points.items():
+            for car_id, car_points in self.__bb_points.items():
                 label_car_id = "" + str(car_id)
                 font_size = cv2.getTextSize(label_car_id, 0, fontScale=tl / 3, thickness=tf)[0]  # line/font thickness
 
