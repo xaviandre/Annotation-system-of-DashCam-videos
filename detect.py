@@ -5,10 +5,7 @@ from pathlib import Path
 import cv2
 import torch
 import torch.backends.cudnn as cudnn
-import numpy as np
 from numpy import random
-from shapely.geometry import Polygon
-import matplotlib.pyplot as plt
 
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
@@ -18,9 +15,7 @@ from utils.plots import plot_one_box
 from utils.torch_utils import select_device, load_classifier, time_synchronized
 
 from lane_det import process_frame, visualize_lines
-from tracker import IntersectionOverUnionTracker
-
-car_id = 12
+from tracker import IntersectionOverUnionTracker, get_intersection_value
 
 
 def detect(opt):
@@ -29,7 +24,7 @@ def detect(opt):
     video_lanes = list()
     cars_curr_frame = []
 
-    source, weights, view_img, save_txt, imgsz, step = opt.source, opt.weights, opt.view_img, opt.save_txt, opt.img_size, opt.frame_step
+    source, weights, view_img, save_txt, imgsz = opt.source, opt.weights, opt.view_img, opt.save_txt, opt.img_size
     save_img = not opt.nosave and not source.endswith('.txt')  # save inference images
     webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(('rtsp://', 'rtmp://', 'http://', 'https://'))
 
@@ -63,7 +58,7 @@ def detect(opt):
         cudnn.benchmark = True  # set True to speed up constant image size inference
         dataset = LoadStreams(source, img_size=imgsz, stride=stride)
     else:
-        dataset = LoadImages(source, img_size=imgsz, stride=stride, step=step)
+        dataset = LoadImages(source, img_size=imgsz, stride=stride)
 
     # Get names and colors
     names = model.module.names if hasattr(model, 'module') else model.names
@@ -80,7 +75,7 @@ def detect(opt):
         curr_frame_idx = None
         if dataset.mode == 'video':
             curr_frame_idx, num_frames = dataset.get_frame_number()
-            if curr_frame_idx == 0 or curr_frame_idx == step:
+            if curr_frame_idx == 1:
                 iou = IntersectionOverUnionTracker()
         elif dataset.mode == 'image':
             iou = IntersectionOverUnionTracker()
@@ -147,7 +142,7 @@ def detect(opt):
                         else:
                             intersect_percentage = None
                             if len(video_lanes) > 0:
-                                intersect_percentage = get_intersection_value(video_lanes, vertices)
+                                intersect_percentage = get_intersection_value(vertices, video_lanes)
                             label_coords, label_rect_coords = iou.get_vehicle_label_points(vertices, im0, line_thickness=opt.line_thickness)
                             plot_one_box(c1, c2, im0, intersect_percentage, label_coords, label_rect_coords, label=label, color=colors[c], line_thickness=opt.line_thickness)
                         cars_curr_frame.append(vertices)
@@ -189,7 +184,11 @@ def detect(opt):
 
         cars_curr_frame = []
 
-    iou.get_bb_area_variance(car_id, save_dir)
+    print(f'Getting features... ({time.time() - t0:.3f}s)')
+
+    iou.get_features_variance()
+    if opt.car_to_analyze is not None:
+        iou.plot_features(save_dir, opt.car_to_analyze)
 
     if save_txt or save_img:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
@@ -198,25 +197,11 @@ def detect(opt):
     print(f'Done. ({time.time() - t0:.3f}s)')
 
 
-def get_intersection_value(video_lanes, bb_vertices):
-    lane_vertices = np.array([[video_lanes[-1][0][0], video_lanes[-1][0][1]], [video_lanes[-1][0][2], video_lanes[-1][0][3]],
-                              [video_lanes[-1][1][2], video_lanes[-1][1][3]], [video_lanes[-1][1][0], video_lanes[-1][1][1]]])
-    lane = Polygon(np.reshape(lane_vertices, (4, 2)))
-    car = Polygon(bb_vertices)
-    lane = lane.buffer(0)
-    car = car.buffer(0)
-    percentage = 0
-    if lane.intersects(car):
-        intersection = car.intersection(lane).area
-        percentage = int((intersection / car.area) * 100)
-
-    return percentage
-
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='yolov5s.pt', help='model.pt path(s)')
     parser.add_argument('--source', type=str, default='data/videos/test7.mp4', help='source')  # file/folder, 0 for webcam
+    parser.add_argument('--car_to_analyze', type=int, default=6, help='ID of the graphics features car')  # Custom Added
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.4, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
@@ -236,7 +221,6 @@ if __name__ == '__main__':
     parser.add_argument('--line-thickness', default=1, type=int, help='bounding box thickness (pixels)')
     parser.add_argument('--hide-labels', default=False, action='store_true', help='hide labels')
     parser.add_argument('--hide-conf', default=True, action='store_true', help='hide confidences')
-    parser.add_argument('--frame_step', type=int, default=1, help='Number of frames skipped in each read')  # Custom Added
     opt = parser.parse_args()
     print(opt)
     check_requirements(exclude=('pycocotools', 'thop'))
