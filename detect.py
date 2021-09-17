@@ -21,7 +21,6 @@ from lane_det import process_frame, visualize_lines
 from tracker import IntersectionOverUnionTracker
 
 car_id = 12
-distance_per_frame = {}
 
 
 def detect(opt):
@@ -156,7 +155,7 @@ def detect(opt):
             # Print time (inference + NMS)
             print(f'{s}Done. ({t2 - t1:.3f}s)')
 
-            iou.update(im0, cars_curr_frame, curr_frame_idx, line_thickness=opt.line_thickness)
+            iou.update(im0, curr_frame_idx, cars_curr_frame, video_lanes, line_thickness=opt.line_thickness)
 
             if len(video_lanes) > 0:
                 lines_visualize = visualize_lines(im0, video_lanes[-1])
@@ -188,13 +187,7 @@ def detect(opt):
                     vid_cap.set(cv2.CAP_PROP_POS_FRAMES, curr_frame_idx)
                     vid_writer.write(im0)
 
-            distance_per_frame[curr_frame_idx] = iou.get_distance_in_frame(car_id, video_lanes)
-
         cars_curr_frame = []
-
-    plt.plot(distance_per_frame.keys(), distance_per_frame.values())
-    plt.savefig(f"{save_dir}/Distance car {car_id}.png")
-    plt.clf()
 
     iou.get_bb_area_variance(car_id, save_dir)
 
