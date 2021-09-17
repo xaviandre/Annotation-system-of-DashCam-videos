@@ -5,10 +5,7 @@ from pathlib import Path
 import cv2
 import torch
 import torch.backends.cudnn as cudnn
-import numpy as np
 from numpy import random
-from shapely.geometry import Polygon
-import matplotlib.pyplot as plt
 
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
@@ -18,9 +15,7 @@ from utils.plots import plot_one_box
 from utils.torch_utils import select_device, load_classifier, time_synchronized
 
 from lane_det import process_frame, visualize_lines
-from tracker import IntersectionOverUnionTracker
-
-car_id = 12
+from tracker import IntersectionOverUnionTracker, get_intersection_value
 
 
 def detect(opt):
@@ -147,7 +142,7 @@ def detect(opt):
                         else:
                             intersect_percentage = None
                             if len(video_lanes) > 0:
-                                intersect_percentage = get_intersection_value(video_lanes, vertices)
+                                intersect_percentage = get_intersection_value(vertices, video_lanes)
                             label_coords, label_rect_coords = iou.get_vehicle_label_points(vertices, im0, line_thickness=opt.line_thickness)
                             plot_one_box(c1, c2, im0, intersect_percentage, label_coords, label_rect_coords, label=label, color=colors[c], line_thickness=opt.line_thickness)
                         cars_curr_frame.append(vertices)
@@ -189,28 +184,13 @@ def detect(opt):
 
         cars_curr_frame = []
 
-    iou.get_bb_area_variance(car_id, save_dir)
+    iou.get_bb_area_variance(save_dir)
 
     if save_txt or save_img:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
         print(f"Results saved to {save_dir}{s}")
 
     print(f'Done. ({time.time() - t0:.3f}s)')
-
-
-def get_intersection_value(video_lanes, bb_vertices):
-    lane_vertices = np.array([[video_lanes[-1][0][0], video_lanes[-1][0][1]], [video_lanes[-1][0][2], video_lanes[-1][0][3]],
-                              [video_lanes[-1][1][2], video_lanes[-1][1][3]], [video_lanes[-1][1][0], video_lanes[-1][1][1]]])
-    lane = Polygon(np.reshape(lane_vertices, (4, 2)))
-    car = Polygon(bb_vertices)
-    lane = lane.buffer(0)
-    car = car.buffer(0)
-    percentage = 0
-    if lane.intersects(car):
-        intersection = car.intersection(lane).area
-        percentage = int((intersection / car.area) * 100)
-
-    return percentage
 
 
 if __name__ == '__main__':
