@@ -2,14 +2,16 @@ import cv2
 from shapely.geometry import Polygon, LineString, Point
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.signal import lfilter
 
 
 class IntersectionOverUnionTracker:
     def __init__(self):
         # Store the bounding box points from the cars
         self.bb_points = {}
-        self.bb_sizes = {}
-        self.bb_distance = {}
+        self.bb_areas = {}
+        self.bb_distances = {}
+        self.bb_intersections = {}
         # Keep the count of the IDs
         # each time a new car is detected, the count will increase by one
         self.id_count = 0
@@ -44,7 +46,7 @@ class IntersectionOverUnionTracker:
             self.id_count += 1
             return bbs_ids
 
-    def update(self, image, detected_cars, curr_frame_idx, line_thickness=3, plot_cars=True):
+    def update(self, image, curr_frame_idx, detected_cars, video_lanes, line_thickness=3, plot_cars=True):
         if len(detected_cars) > 0:
             # Cars bbs and IDs
             car_bbs_ids = []
@@ -56,9 +58,9 @@ class IntersectionOverUnionTracker:
 
             # Clean the dictionary by removing IDs not used anymore
             new_bb_points = {}
-            for vertices, id in car_bbs_ids:
-                points = self.bb_points[id]
-                new_bb_points[id] = points
+            for vertices, car_id in car_bbs_ids:
+                points = self.bb_points[car_id]
+                new_bb_points[car_id] = points
 
             # Update dictionary with non used IDs removed
             self.bb_points = new_bb_points.copy()
@@ -66,69 +68,98 @@ class IntersectionOverUnionTracker:
             if plot_cars:
                 self.__plot_car_ids(image, line_thickness)
 
-            self.__save_bb_size(curr_frame_idx)
+            self.__save_bb_features(curr_frame_idx, video_lanes)
 
-    def __save_bb_size(self, curr_frame_idx):
+    def __save_bb_features(self, curr_frame_idx, video_lanes):
         # Fill the bounding box sizes list of the non present cars with None or the bb area for existing cars
-        if len(self.bb_sizes) > 0:
+        if len(self.bb_areas) > 0:
             # Get the IDs of the new cars in the present frame
-            new_car_ids = list(set(self.bb_points.keys()) - set(self.bb_sizes.keys()))
+            new_car_ids = list(set(self.bb_points.keys()) - set(self.bb_areas.keys()))
             # Fill the lists with the bb area or None, when the car is no longer present in the frame
-            for car_id, bb_size in self.bb_sizes.items():
+            for car_id, bb_size in self.bb_areas.items():
                 car_area = None
+                car_distance = None
                 if car_id in self.bb_points.keys():
-                    car_bb = self.bb_points[car_id]
-                    car_area = Polygon(car_bb).area
+                    car = self.bb_points[car_id]
+                    car_bb = Polygon(car)
+                    car_area = car_bb.area
+                    car_distance = self.__get_distance_in_frame(car, car_area, video_lanes)
                 bb_size.append(car_area)
+                bb_distance = self.bb_distances[car_id]
+                bb_distance.append(car_distance)
+                self.bb_distances[car_id] = bb_distance
 
             # Add to the bb sizes dictionary the new cars present in the current frame
             for car_id in new_car_ids:
-                car_bb = self.bb_points[car_id]
-                car_area = Polygon(car_bb).area
+                car = self.bb_points[car_id]
+                car_bb = Polygon(car)
+                car_area = car_bb.area
                 bb_size = [None] * (curr_frame_idx - 1)
                 bb_size.append(car_area)
-                self.bb_sizes[car_id] = bb_size
+                self.bb_areas[car_id] = bb_size
+
+                car_distance = self.__get_distance_in_frame(car, car_area, video_lanes)
+                bb_distance = [None] * (curr_frame_idx - 1)
+                bb_distance.append(car_distance)
+                self.bb_distances[car_id] = bb_distance
 
         # In case there are still no car bb sizes added to the dictionary
         else:
             for car_id, bb in self.bb_points.items():
-                car_area = Polygon(bb).area
+                car = self.bb_points[car_id]
+                car_bb = Polygon(car)
+                car_area = car_bb.area
                 bb_size = [None] * (curr_frame_idx - 1)
                 bb_size.append(car_area)
-                self.bb_sizes[car_id] = bb_size
+                self.bb_areas[car_id] = bb_size
+
+                car_distance = self.__get_distance_in_frame(car, car_area, video_lanes)
+                bb_distance = [None] * (curr_frame_idx - 1)
+                bb_distance.append(car_distance)
+                self.bb_distances[car_id] = bb_distance
 
     def get_bb_area_variance(self, car_id, save_dir):
-        if car_id in self.bb_sizes.keys():
-            bb_values = self.bb_sizes[car_id]
+        if car_id in self.bb_areas.keys():
+            bb_area_values = self.bb_areas[car_id]
+            bb_distance_values = self.bb_distances[car_id]
+
             i = 0
             x = list()
-            y = list()
-            for bb_value in bb_values:
+            y_area = list()
+            y_distance = list()
+            for bb_value in bb_area_values:
                 if bb_value is not None:
                     x.append(i)
-                    y.append(bb_value)
+                    y_area.append(bb_value)
+                    y_distance.append(bb_distance_values[i])
                 i += 1
-            plt.plot(x, y)
+
+            plt.plot(x, y_area)
             plt.savefig(f"{save_dir}/Area car {car_id}.png")
             plt.clf()
-            slope = np.gradient(y)
-            plt.plot(x, slope)
+
+            plt.plot(x, y_distance)
+            plt.savefig(f"{save_dir}/Distance car {car_id}.png")
+            plt.clf()
+
+            slope = np.gradient(y_area)
+            n = 50  # the larger n is, the smoother curve will be
+            b = [1.0 / n] * n
+            a = 1
+            yy = lfilter(b, a, slope)
+            plt.plot(x, yy)
             plt.savefig(f"{save_dir}/Area derivative car {car_id}.png")
             plt.clf()
 
-    def get_distance_in_frame(self, id, video_lanes):
-        if id not in self.bb_points.keys():
-            return None
-        rect_car = self.bb_points[id]
-        car = Polygon(rect_car)
-        cx_car = (rect_car[0][0] + rect_car[1][0]) // 2
-        cy_car = (rect_car[0][1] + rect_car[1][1]) // 2
+    def __get_distance_in_frame(self, car, car_area, video_lanes):
+        cx_car = (car[0][0] + car[1][0]) // 2
+        cy_car = (car[0][1] + car[1][1]) // 2
         c_car = Point(cx_car, cy_car)
         rect_lane = video_lanes[-1]
         lane_points = [[(rect_lane[0][0] + rect_lane[1][0]) // 2, (rect_lane[0][1] + rect_lane[1][1]) // 2],
                        [(rect_lane[0][2] + rect_lane[1][2]) // 2, (rect_lane[0][3] + rect_lane[1][3]) // 2]]
         lane = LineString(lane_points)
-        return (c_car.distance(lane) * c_car.distance(lane)) / car.area
+        return (c_car.distance(lane) * c_car.distance(lane)) / car_area
 
     def get_vehicle_label_points(self, vehicle, image, line_thickness=3):
         car_id = self.__add_car(vehicle, None, check_only=True)
