@@ -8,8 +8,8 @@ from scipy.signal import lfilter
 class IntersectionOverUnionTracker:
     def __init__(self):
         # Store the bounding boxes' features
-        self.__bb_points, self.__bb_areas, self.__bb_distances, self.__bb_intersections = {}, {}, {}, {}
-        self.__bb_area_variance, self.__bb_distance_variance = {}, {}
+        self.__bb_points, self.__bb_points_last, self.__bb_points_old, self.__bb_points_older, self.__bb_points_oldest = {}, {}, {}, {}, {}
+        self.__bb_areas, self.__bb_distances, self.__bb_intersections, self.__bb_area_variance, self.__bb_distance_variance = {}, {}, {}, {}, {}
         # Keep the count of the IDs each time a new car is detected, the count will increase by one
         self.__id_count, self.__id_count_check = 0, 0
 
@@ -17,7 +17,13 @@ class IntersectionOverUnionTracker:
         car = Polygon(vehicle)
         car = car.buffer(0)
 
-        for car_id, car_points in self.__bb_points.items():
+        all_bb_points = self.__bb_points_oldest.copy()
+        all_bb_points.update(self.__bb_points_older)
+        all_bb_points.update(self.__bb_points_old)
+        all_bb_points.update(self.__bb_points_last)
+        all_bb_points.update(self.__bb_points)
+
+        for car_id, car_points in all_bb_points.items():
             existent_car = Polygon(car_points)
             existent_car = existent_car.buffer(0)
             intersection = car.intersection(existent_car)
@@ -58,6 +64,11 @@ class IntersectionOverUnionTracker:
                 points = self.__bb_points[car_id]
                 new_bb_points[car_id] = points
 
+            # Save the last 4 dictionaries
+            self.__bb_points_oldest = self.__bb_points_older
+            self.__bb_points_older = self.__bb_points_old
+            self.__bb_points_old = self.__bb_points_last
+            self.__bb_points_last = self.__bb_points
             # Update dictionary with non used IDs removed
             self.__bb_points = new_bb_points.copy()
 
@@ -157,44 +168,45 @@ class IntersectionOverUnionTracker:
                 self.__bb_distance_variance[car_id] = bb_distance_variance_values
 
     def plot_features(self, save_dir, plot_car_id):
-        bb_area_values = self.__bb_areas[plot_car_id]
-        bb_distance_values = self.__bb_distances[plot_car_id]
-        bb_intersection_values = self.__bb_intersections[plot_car_id]
-        bb_area_variance_values = self.__bb_area_variance[plot_car_id]
-        bb_distance_variance_values = self.__bb_distance_variance[plot_car_id]
+        if plot_car_id is not None:
+            bb_area_values = self.__bb_areas[plot_car_id]
+            bb_distance_values = self.__bb_distances[plot_car_id]
+            bb_intersection_values = self.__bb_intersections[plot_car_id]
+            bb_area_variance_values = self.__bb_area_variance[plot_car_id]
+            bb_distance_variance_values = self.__bb_distance_variance[plot_car_id]
 
-        i, x, y_area, y_distance, y_intersection, yy_area, yy_distance = 0, list(), list(), list(), list(), list(), list()
-        for bb_value in bb_area_values:
-            if bb_value is not None:
-                x.append(i)
-                y_area.append(bb_value)
-                y_distance.append(bb_distance_values[i])
-                y_intersection.append(bb_intersection_values[i])
-                yy_area.append(bb_area_variance_values[i])
-                yy_distance.append(bb_distance_variance_values[i])
-            i += 1
+            i, x, y_area, y_distance, y_intersection, yy_area, yy_distance = 0, list(), list(), list(), list(), list(), list()
+            for bb_value in bb_area_values:
+                if bb_value is not None:
+                    x.append(i)
+                    y_area.append(bb_value)
+                    y_distance.append(bb_distance_values[i])
+                    y_intersection.append(bb_intersection_values[i])
+                    yy_area.append(bb_area_variance_values[i])
+                    yy_distance.append(bb_distance_variance_values[i])
+                i += 1
 
-        plt.plot(x, y_area)
-        plt.savefig(f"{save_dir}/Area car {plot_car_id}.png")
-        plt.clf()
-
-        plt.plot(x, y_distance)
-        plt.savefig(f"{save_dir}/Distance car {plot_car_id}.png")
-        plt.clf()
-
-        plt.plot(x, y_intersection)
-        plt.savefig(f"{save_dir}/Intersection car {plot_car_id}.png")
-        plt.clf()
-
-        if yy_area:
-            plt.plot(x, yy_area)
-            plt.savefig(f"{save_dir}/Area derivative car {plot_car_id}.png")
+            plt.plot(x, y_area)
+            plt.savefig(f"{save_dir}/Area car {plot_car_id}.png")
             plt.clf()
 
-        if yy_distance:
-            plt.plot(x, yy_distance)
-            plt.savefig(f"{save_dir}/Distance derivative car {plot_car_id}.png")
+            plt.plot(x, y_distance)
+            plt.savefig(f"{save_dir}/Distance car {plot_car_id}.png")
             plt.clf()
+
+            plt.plot(x, y_intersection)
+            plt.savefig(f"{save_dir}/Intersection car {plot_car_id}.png")
+            plt.clf()
+
+            if yy_area:
+                plt.plot(x, yy_area)
+                plt.savefig(f"{save_dir}/Area derivative car {plot_car_id}.png")
+                plt.clf()
+
+            if yy_distance:
+                plt.plot(x, yy_distance)
+                plt.savefig(f"{save_dir}/Distance derivative car {plot_car_id}.png")
+                plt.clf()
 
     def get_vehicle_label_points(self, vehicle, image, line_thickness=3):
         car_id = self.__add_car(vehicle, None, check_only=True)
@@ -233,7 +245,7 @@ def get_intersection_value(car, video_lanes):
     percentage = 0
     if lane_bb.intersects(car_bb):
         intersection = car_bb.intersection(lane_bb).area
-        percentage = int((intersection / car_bb.area) * 100)
+        percentage = (intersection / car_bb.area) * 100
 
     return percentage
 
@@ -246,4 +258,8 @@ def get_distance_in_frame(car, car_area, video_lanes):
     lane_points = [[(rect_lane[0][0] + rect_lane[1][0]) // 2, (rect_lane[0][1] + rect_lane[1][1]) // 2],
                    [(rect_lane[0][2] + rect_lane[1][2]) // 2, (rect_lane[0][3] + rect_lane[1][3]) // 2]]
     lane = LineString(lane_points)
-    return (c_car.distance(lane) * c_car.distance(lane)) / car_area
+    distance_in_pixels = (c_car.distance(lane) * c_car.distance(lane)) / car_area
+    # one_and_half_meter = lane_points[0][0] - rect_lane[0][0]
+    # distance_in_meters = (distance_in_pixels * 1.5) / one_and_half_meter
+
+    return distance_in_pixels
