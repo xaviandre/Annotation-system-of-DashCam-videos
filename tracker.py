@@ -12,6 +12,8 @@ class IntersectionOverUnionTracker:
         self.__bb_areas, self.__bb_distances, self.__bb_intersections, self.__bb_area_variance, self.__bb_distance_variance = {}, {}, {}, {}, {}
         # Keep the count of the IDs each time a new car is detected, the count will increase by one
         self.__id_count, self.__id_count_check = 0, 0
+        # Annotations
+        self.__annotations_video = list()
 
     def __add_car(self, vehicle, bbs_ids, check_only=False):
         car = Polygon(vehicle)
@@ -235,6 +237,37 @@ class IntersectionOverUnionTracker:
 
                 cv2.rectangle(image, p1, p2, [74, 207, 237], -1, cv2.LINE_AA)
                 cv2.putText(image, label_car_id, p_text, 0, tl / 3, [0, 0, 0], thickness=tf, lineType=cv2.LINE_AA)
+
+    def analyze_features(self):
+        for car_id in self.__bb_areas.keys():
+            if car_id in self.__bb_area_variance.keys():
+                for x in range(len(self.__bb_areas[car_id])):
+                    y = 4
+                    if x < 4:
+                        y = x
+                    a = [z for z in self.__bb_areas[car_id][x - y:x + 1] if z is not None]
+                    d = [z for z in self.__bb_distance_variance[car_id][x - y:x + 1] if z is not None]
+                    i = self.__bb_intersections[car_id][x]
+                    if a:
+                        av = [z for z in self.__bb_area_variance[car_id][x - y:x + 1] if z is not None]
+                        av = np.array(av) / a
+                        if np.mean(av) > 0.1 and i >= 50:
+                            self.__annotations_video.append("Perigo de colisão com o carro da frente (id = " + str(car_id) + ") ao segundo " + str(x // 25))
+                        if np.mean(av) > 0.1 and i > 0:
+                            if np.mean(d) > 0:
+                                self.__annotations_video.append("Perigo de colisão com um carro vindo da esquerda (id = " + str(car_id) + ") ao segundo " + str(x // 25))
+                            else:
+                                self.__annotations_video.append("Perigo de colisão com um carro vindo da direita (id = " + str(car_id) + ") ao segundo " + str(x // 25))
+        if len(self.__annotations_video) > 3:
+            print("Vídeo com muito perigo para o condutor")
+        elif len(self.__annotations_video) == 2:
+            print("Vídeo com perigo para o condutor")
+        elif len(self.__annotations_video) == 1:
+            print("Vídeo com pouco perigo para o condutor")
+        else:
+            print("Vídeo sem perigo para o condutor")
+        for x in self.__annotations_video:
+            print(x)
 
 
 def get_intersection_value(car, video_lanes):

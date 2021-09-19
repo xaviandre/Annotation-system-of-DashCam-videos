@@ -185,10 +185,12 @@ def detect(opt):
         cars_curr_frame = []
 
     print(f'Getting features... ({time.time() - t0:.3f}s)')
-
     iou.get_features_variance()
+
+    print(f'Analyzing features... ({time.time() - t0:.3f}s)')
     if opt.car_to_analyze is not None:
         iou.plot_features(save_dir, opt.car_to_analyze)
+    iou.analyze_features()
 
     if save_txt or save_img:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
@@ -200,8 +202,8 @@ def detect(opt):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='yolov5s.pt', help='model.pt path(s)')
-    parser.add_argument('--source', type=str, default='data/videos/test7.mp4', help='source')  # file/folder, 0 for webcam
-    parser.add_argument('--car_to_analyze', type=int, default=11, help='ID of the graphics features car')  # Custom Added
+    parser.add_argument('--source', type=str, default='data/videos/test2.mp4', help='source')  # file/folder, 0 for webcam
+    parser.add_argument('--car_to_analyze', type=int, default=None, help='ID of the graphics features car')  # Custom Added
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.4, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
