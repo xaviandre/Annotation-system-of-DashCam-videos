@@ -1,40 +1,83 @@
 import os, json, csv
 from datetime import datetime
 import datetime as dtime
+import numpy as np
 
 class AnnotationIntreperter:
 
     def __init__(self):
+        # Different annotation types
         self.me_aws = "ME_AWS"
         self.me_tsr = "ME_TSR"
         self.me_car = "ME_Car"
         self.gps = "GPS"
         self.drivingevents_map = "DrivingEvents_Map"
+        # List containing all the different annotation types
         self.__anot_types = [self.me_aws, self.me_tsr, self.me_car, self.gps, self.drivingevents_map]
-        self.__folder_path = "./TFC_ISEL_Dashcam/trips"
-        self.__current_time = None
-        self.__video_dict = {}
-        self.__info_dict = {}
-        self.__trip_number = 0
+        self.__folder_path = "./TFC_ISEL_Dashcam/trips" # Folder where the meta information is present
+        self.__current_time = None  # Current frame timestamp
+        self.__vid_general_info_dict = {}   # Dictionary of the .JSON file belonging to the video
+        self.__csv_info_dict = {}   # Dictionary that keeps the meta information belonging to the video
+        self.__trip_number = 0  # Video Trip number
+        self.__curr_ts_info_dict = {}   # Dictionary that keeps the meta information of the current frame
 
+    # Runs all the functions
     def initialize_video(self, vid_name):
-        self.__video_dict, self.__trip_number = self.__get_video_info_dict(vid_name, "")
+        self.__vid_general_info_dict, self.__trip_number = self.__get_video_info_dict(vid_name, "")
         trip_files = self.__get_trip_csv_files(self.__trip_number)
+
         for anot in self.__anot_types:
-            anot_data = self.get_meta_info(trip_files, self.__video_dict, self.me_aws)
-            if anot_data != None or len(anot_data) == 0:
-                self.__info_dict[anot] = anot_data
+            anot_data = self.__get_meta_info(trip_files, self.__vid_general_info_dict, self.me_aws)
+            if anot_data != None and len(anot_data) != 0:
+                self.__csv_info_dict[anot] = anot_data
 
     # Updates the current timestamp of the video each frame
     def update_timestamp(self, framerate):
         microseconds_to_update = round(1000000/framerate)
         time_change = dtime.timedelta(microseconds=microseconds_to_update)
-        self.__current_time = self.__current_time + time_change
+        updated_time = self.__current_time + time_change
+        self.__event_tracker(updated_time)
+        self.__current_time = updated_time
 
-    def __event_tracker(self):
-        #TODO Detetar quando existem eventos ocurridos entre a frame atual e a anterior, talvez definir um step
-        hello = "world"
+    # Obtains all the events that took place between the current frame and the next frame
+    def __event_tracker(self, end_time):
+        annotations_used = [self.me_aws] #List containing the meta information types that are used
+        for annot in annotations_used:
+            if annot in self.__csv_info_dict.keys():
+                curr_anon_dict = self.__csv_info_dict[annot]
+                timestamps = curr_anon_dict['ts']
+                start_idx = -10
+                end_idx = -10
+                found_start = False
+                for ts in timestamps:
+                    date_time_ts = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%f%z")
+                    if date_time_ts >= self.__current_time and date_time_ts < end_time:
+                        if not found_start:
+                            found_start = True
+                            start_idx = timestamps.index(ts)
+                            end_idx = timestamps.index(ts) + 1
+                        elif date_time_ts < end_time:
+                            end_idx = timestamps.index(ts) + 1
+                        else:
+                            break
 
+                if start_idx != -10 and end_idx != -10:
+                    present_info_dict = {}
+                    for item in curr_anon_dict.items():
+                        print(item)
+                        values = item[1]
+                        if start_idx != end_idx:
+                            present_info_dict[item[0]] = np.array(values)[start_idx:end_idx]
+                        else:
+                            present_info_dict[item[0]] = np.array(values)[start_idx]
+
+                    self.__curr_ts_info_dict = present_info_dict.copy()
+
+                else:
+                    self.__curr_ts_info_dict = {}
+
+
+    # Verifies if a JSON file contains a dictionary belonging to the video_name inserted and returns it together with the JSON file name
     def __video_exists_in_file(self, video_name, json_file_name):
         with open(self.__folder_path + "/" + str(json_file_name)) as file:
             data = json.load(file)
@@ -68,6 +111,7 @@ class AnnotationIntreperter:
         self.__current_time = datetime.strptime(video_dictionary['vid_start'], "%Y-%m-%dT%H:%M:%S.%f%z")
         return video_dictionary, trip_file_name.split("_")[0]
 
+    # Returns a list with the csv file names(if existant) belonging to a certain trip
     def __get_trip_csv_files(self, trip_name):
         cvs_files = [csv_file for csv_file in os.listdir(self.__folder_path) if csv_file.endswith('.csv')]
         csv_trip_files = [parsed_csv for parsed_csv in cvs_files if parsed_csv.split("_")[0] == trip_name]
@@ -77,7 +121,7 @@ class AnnotationIntreperter:
         return csv_trip_files
 
     # Obtains the video meta information of any of the csv files
-    def get_meta_info(self, trip_files, video_dict, anotation_type):
+    def __get_meta_info(self, trip_files, video_dict, anotation_type):
         if anotation_type not in self.__anot_types:
             print("Annotation type non existent")
             return
@@ -100,7 +144,22 @@ class AnnotationIntreperter:
                         if curr_timestamp <= ts_end:
                             video_data.append(row)
                         else:
-                            return video_data
+                            return self.__format_video_data(video_data)
+
+        return None
+
+    # Formats list of dictionaries to only a dictionary
+    def __format_video_data(self, video_data):
+        new_dict = {}
+        for key in video_data[0].keys():
+            key_values = []
+            for dictionary in video_data:
+                key_values.append(dictionary[key])
+
+            new_dict[key] = key_values
+
+        return new_dict
 
 intreperter = AnnotationIntreperter()
 intreperter.initialize_video("EVUfcV74AuhN6QkdRX9pmD")
+# intreperter.update_timestamp(15)
