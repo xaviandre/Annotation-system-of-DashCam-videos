@@ -157,11 +157,11 @@ class IntersectionOverUnionTracker:
             bb_distance_values = self.__bb_distances[car_id]
 
             i, x, y_area, y_distance = 0, list(), list(), list()
-            for bb_area_value in bb_area_values:
-                if bb_area_value is not None:
+            for bb_distance_value in bb_distance_values:
+                if bb_distance_value is not None:
                     x.append(i)
-                    y_area.append(bb_area_value)
-                    y_distance.append(bb_distance_values[i])
+                    y_area.append(bb_area_values[i])
+                    y_distance.append(bb_distance_value)
                 i += 1
 
             if len(x) > 1:
@@ -174,8 +174,8 @@ class IntersectionOverUnionTracker:
                 bb_distance_variance_values = bb_distance_values.copy()
 
                 i1, i2 = 0, 0
-                for bb_area_value in bb_area_values:
-                    if bb_area_value is not None:
+                for bb_distance_value in bb_distance_values:
+                    if bb_distance_value is not None:
                         bb_area_variance_values[i2] = yy_area[i1]
                         bb_distance_variance_values[i2] = yy_distance[i1]
                         i1 += 1
@@ -334,28 +334,32 @@ class IntersectionOverUnionTracker:
 
 
 def get_intersection_value(car, video_lanes):
-    lane_vertices = np.array([[video_lanes[-1][0][0], video_lanes[-1][0][1]], [video_lanes[-1][0][2], video_lanes[-1][0][3]],
-                              [video_lanes[-1][1][2], video_lanes[-1][1][3]], [video_lanes[-1][1][0], video_lanes[-1][1][1]]])
-    lane_bb = Polygon(np.reshape(lane_vertices, (4, 2))).buffer(0)
-    car_bb = Polygon(car).buffer(0)
-    percentage = 0
-    if lane_bb.intersects(car_bb):
-        intersection = car_bb.intersection(lane_bb).area
-        percentage = (intersection / car_bb.area) * 100
+    if len(video_lanes) > 0:
+        lane_vertices = np.array([[video_lanes[-1][0][0], video_lanes[-1][0][1]], [video_lanes[-1][0][2], video_lanes[-1][0][3]],
+                                  [video_lanes[-1][1][2], video_lanes[-1][1][3]], [video_lanes[-1][1][0], video_lanes[-1][1][1]]])
+        lane_bb = Polygon(np.reshape(lane_vertices, (4, 2))).buffer(0)
+        car_bb = Polygon(car).buffer(0)
+        percentage = 0
+        if lane_bb.intersects(car_bb):
+            intersection = car_bb.intersection(lane_bb).area
+            percentage = (intersection / car_bb.area) * 100
 
-    return percentage
+        return percentage
+    return None
 
 
 def get_distance_in_frame(car, car_area, video_lanes):
-    cx_car = (car[0][0] + car[1][0]) // 2
-    cy_car = (car[0][1] + car[1][1]) // 2
-    c_car = Point(cx_car, cy_car)
-    rect_lane = video_lanes[-1]
-    lane_points = [[(rect_lane[0][0] + rect_lane[1][0]) // 2, (rect_lane[0][1] + rect_lane[1][1]) // 2],
-                   [(rect_lane[0][2] + rect_lane[1][2]) // 2, (rect_lane[0][3] + rect_lane[1][3]) // 2]]
-    lane = LineString(lane_points)
-    distance_in_pixels = (c_car.distance(lane) * c_car.distance(lane)) / car_area
-    # one_and_half_meter = lane_points[0][0] - rect_lane[0][0]
-    # distance_in_meters = (distance_in_pixels * 1.5) / one_and_half_meter
+    if len(video_lanes) > 0:
+        cx_car = (car[0][0] + car[1][0]) // 2
+        cy_car = (car[0][1] + car[1][1]) // 2
+        c_car = Point(cx_car, cy_car)
+        rect_lane = video_lanes[-1]
+        lane_points = [[(rect_lane[0][0] + rect_lane[1][0]) // 2, (rect_lane[0][1] + rect_lane[1][1]) // 2],
+                       [(rect_lane[0][2] + rect_lane[1][2]) // 2, (rect_lane[0][3] + rect_lane[1][3]) // 2]]
+        lane = LineString(lane_points)
+        distance_in_pixels = (c_car.distance(lane) * c_car.distance(lane)) / car_area
+        # one_and_half_meter = lane_points[0][0] - rect_lane[0][0]
+        # distance_in_meters = (distance_in_pixels * 1.5) / one_and_half_meter
 
-    return distance_in_pixels
+        return distance_in_pixels
+    return None
