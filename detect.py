@@ -190,7 +190,7 @@ def detect(opt):
     print(f'Analyzing features... ({time.time() - t0:.3f}s)')
     if opt.car_to_analyze is not None:
         iou.plot_features(save_dir, opt.car_to_analyze)
-    iou.analyze_features()
+    iou.analyze_features(save_dir)
 
     if save_txt or save_img:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
@@ -202,7 +202,7 @@ def detect(opt):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='yolov5s.pt', help='model.pt path(s)')
-    parser.add_argument('--source', type=str, default='data/videos/test2.mp4', help='source')  # file/folder, 0 for webcam
+    parser.add_argument('--source', type=str, default='data/videos/test4.mp4', help='source')  # file/folder, 0 for webcam
     parser.add_argument('--car_to_analyze', type=int, default=None, help='ID of the graphics features car')  # Custom Added
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.4, help='object confidence threshold')

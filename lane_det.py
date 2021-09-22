@@ -3,7 +3,7 @@ import numpy as np
 
 width = 768
 height = 432
-horizon = 241
+horizon = 325
 
 
 def do_canny(original_frame):
@@ -55,7 +55,7 @@ def calculate_lines(lines, previous_left_parameters, previous_right_parameters):
 
         if m < -.3 or m > .3:
             # Calculate the x coordinate when the line intersects the 3/4 of the height
-            x_top = int((((3 / 4) * height) - b) / m)
+            x_top = int((((horizon + height) / 2) - b) / m)
             x_height = int((height - b) / m)
 
             if int((1 / 5) * width) < x_height < int((4 / 5) * width) and int((1 / 3) * width) < x_top < int((2 / 3) * width):
@@ -118,8 +118,8 @@ def calculate_coordinates(parameters):
     slope, intercept = parameters
     # Sets initial y-coordinate as height from top down (bottom of the frame)
     y1 = height
-    # Sets final y-coordinate as 150 above the bottom of the frame
-    y2 = int(y1 - 150)
+    # Sets final y-coordinate as the horizon
+    y2 = int(horizon)
     # Sets initial x-coordinate as (y1 - b) / m since y1 = mx1 + b
     x1 = int((y1 - intercept) / slope)
     # Sets final x-coordinate as (y2 - b) / m since y2 = mx2 + b
@@ -176,7 +176,7 @@ def process_frame(frame, left_parameters, right_parameters, video_lanes, draw_li
 
         # Overlays lines on frame by taking their weighted sums and adding an arbitrary scalar value of 1 as the gamma argument
         result = cv.addWeighted(frame, .9, lines_visualize, 1, 1)
-        cv.imshow("result", result)
+        # cv.imshow("result", result)
 
         # Opens a new window and displays the output frame
         return result, left_params, right_params, lanes
@@ -189,7 +189,7 @@ def process_frame(frame, left_parameters, right_parameters, video_lanes, draw_li
     return left_params, right_params, lanes
 
 
-# cap = cv.VideoCapture("data/videos/test2.mp4")
+# cap = cv.VideoCapture("data/videos/test3.mp4")
 # left_param = None
 # right_param = None
 # video_lane = list()

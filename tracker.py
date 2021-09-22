@@ -3,11 +3,15 @@ from shapely.geometry import Polygon, LineString, Point
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import lfilter
+import csv
+
+width = 768
 
 
 class IntersectionOverUnionTracker:
     def __init__(self):
         # Store the bounding boxes' features
+        self.__bb_points_all = {}
         self.__bb_points, self.__bb_points_last, self.__bb_points_old, self.__bb_points_older, self.__bb_points_oldest = {}, {}, {}, {}, {}
         self.__bb_areas, self.__bb_distances, self.__bb_intersections, self.__bb_area_variance, self.__bb_distance_variance = {}, {}, {}, {}, {}
         # Keep the count of the IDs each time a new car is detected, the count will increase by one
@@ -86,13 +90,14 @@ class IntersectionOverUnionTracker:
             new_car_ids = list(set(self.__bb_points.keys()) - set(self.__bb_areas.keys()))
             # Fill the lists with the bb area or None, when the car is no longer present in the frame
             for car_id in self.__bb_areas.keys():
-                car_area, car_distance, car_intersection = None, None, None
+                car, car_area, car_distance, car_intersection = None, None, None, None
                 if car_id in self.__bb_points.keys():
                     car = self.__bb_points[car_id]
                     car_bb = Polygon(car)
                     car_area = car_bb.area
                     car_distance = get_distance_in_frame(car, car_area, video_lanes)
                     car_intersection = get_intersection_value(car, video_lanes)
+                self.__bb_points_all[car_id].append(car)
                 self.__bb_areas[car_id].append(car_area)
                 self.__bb_distances[car_id].append(car_distance)
                 self.__bb_intersections[car_id].append(car_intersection)
@@ -101,6 +106,11 @@ class IntersectionOverUnionTracker:
             for car_id in new_car_ids:
                 car = self.__bb_points[car_id]
                 car_bb = Polygon(car)
+
+                bb = [None] * (curr_frame_idx - 1)
+                bb.append(car)
+                self.__bb_points_all[car_id] = bb
+
                 car_area = car_bb.area
                 bb_size = [None] * (curr_frame_idx - 1)
                 bb_size.append(car_area)
@@ -121,6 +131,11 @@ class IntersectionOverUnionTracker:
             for car_id in self.__bb_points.keys():
                 car = self.__bb_points[car_id]
                 car_bb = Polygon(car)
+
+                bb = [None] * (curr_frame_idx - 1)
+                bb.append(car)
+                self.__bb_points_all[car_id] = bb
+
                 car_area = car_bb.area
                 bb_size = [None] * (curr_frame_idx - 1)
                 bb_size.append(car_area)
@@ -152,7 +167,7 @@ class IntersectionOverUnionTracker:
             if len(x) > 1:
                 n = 50  # the larger n is, the smoother curve will be
                 b = [1.0 / n] * n
-                yy_area = lfilter(b, 1, np.gradient(y_area))
+                yy_area = lfilter(b, 1, np.gradient(y_area) / y_area)
                 yy_distance = lfilter(b, 1, np.gradient(y_distance))
 
                 bb_area_variance_values = bb_area_values.copy()
@@ -170,7 +185,7 @@ class IntersectionOverUnionTracker:
                 self.__bb_distance_variance[car_id] = bb_distance_variance_values
 
     def plot_features(self, save_dir, plot_car_id):
-        if plot_car_id is not None:
+        if plot_car_id is not None and plot_car_id in self.__bb_areas.keys():
             bb_area_values = self.__bb_areas[plot_car_id]
             bb_distance_values = self.__bb_distances[plot_car_id]
             bb_intersection_values = self.__bb_intersections[plot_car_id]
@@ -238,36 +253,84 @@ class IntersectionOverUnionTracker:
                 cv2.rectangle(image, p1, p2, [74, 207, 237], -1, cv2.LINE_AA)
                 cv2.putText(image, label_car_id, p_text, 0, tl / 3, [0, 0, 0], thickness=tf, lineType=cv2.LINE_AA)
 
-    def analyze_features(self):
-        for car_id in self.__bb_areas.keys():
-            if car_id in self.__bb_area_variance.keys():
-                for x in range(len(self.__bb_areas[car_id])):
-                    y = 4
-                    if x < 4:
-                        y = x
-                    a = [z for z in self.__bb_areas[car_id][x - y:x + 1] if z is not None]
-                    d = [z for z in self.__bb_distance_variance[car_id][x - y:x + 1] if z is not None]
-                    i = self.__bb_intersections[car_id][x]
-                    if a:
-                        av = [z for z in self.__bb_area_variance[car_id][x - y:x + 1] if z is not None]
-                        av = np.array(av) / a
-                        if np.mean(av) > 0.1 and i >= 50:
-                            self.__annotations_video.append("Perigo de colisão com o carro da frente (id = " + str(car_id) + ") ao segundo " + str(x // 25))
-                        if np.mean(av) > 0.1 and i > 0:
-                            if np.mean(d) > 0:
-                                self.__annotations_video.append("Perigo de colisão com um carro vindo da esquerda (id = " + str(car_id) + ") ao segundo " + str(x // 25))
+    def analyze_features(self, save_dir):
+        with open(f"{save_dir}/annotations.csv", 'w', newline='') as annotations:
+            fieldnames = ['frame', 'danger', 'danger_front', 'danger_left', 'danger_right', 'lane_entry', 'entry_left', 'entry_right',
+                          'lane_departure', 'departure_left', 'departure_right', 'approx', 'approx_front', 'approx_left', 'approx_right',
+                          'total_cars', 'car_in_lane', 'cars_on_left', 'cars_on_right']
+            writer = csv.DictWriter(annotations, fieldnames=fieldnames)
+            writer.writeheader()
+            if len(self.__bb_areas[0]) > 0:
+                for frame in range(len(self.__bb_areas[0])):
+                    danger, danger_front, danger_left, danger_right = False, False, False, False
+                    lane_entry, entry_left, entry_right = False, False, False
+                    lane_departure, departure_left, departure_right = False, False, False
+                    approx, approx_front, approx_left, approx_right = False, False, False, False
+                    total_cars, car_in_lane, cars_on_left, cars_on_right = 0, False, 0, 0
+                    x = 4
+                    if frame < x:
+                        x = frame
+                    for car_id in self.__bb_area_variance.keys():
+                        # Last 5 frames variance values
+                        a = [z for z in self.__bb_area_variance[car_id][frame - x:frame + 1] if z is not None]
+                        d = [z for z in self.__bb_distance_variance[car_id][frame - x:frame + 1] if z is not None]
+                        # Car points and intersection value for actual frame
+                        actual_i = self.__bb_intersections[car_id][frame]
+                        actual_car = self.__bb_points_all[car_id][frame]
+                        # Car points and intersection value for the last frame
+                        last_i = self.__bb_intersections[car_id][frame]
+                        last_car = self.__bb_points_all[car_id][frame]
+                        if a and d and actual_i is not None:
+                            if actual_i >= 50:
+                                car_in_lane = True
+                                if last_i is not None:
+                                    if last_i < 50:
+                                        lane_entry = True
+                                        if last_car is not None:
+                                            cx_car = (last_car[0][0] + last_car[1][0]) // 2
+                                            if cx_car < width // 2:
+                                                entry_left = True
+                                            else:
+                                                entry_right = True
+                                if np.mean(a) > 0:
+                                    approx = True
+                                    approx_front = True
+                                    if np.mean(a) > 0.05:
+                                        danger_front = True
+                                        danger = True
                             else:
-                                self.__annotations_video.append("Perigo de colisão com um carro vindo da direita (id = " + str(car_id) + ") ao segundo " + str(x // 25))
-        if len(self.__annotations_video) > 3:
-            print("Vídeo com muito perigo para o condutor")
-        elif len(self.__annotations_video) == 2:
-            print("Vídeo com perigo para o condutor")
-        elif len(self.__annotations_video) == 1:
-            print("Vídeo com pouco perigo para o condutor")
-        else:
-            print("Vídeo sem perigo para o condutor")
-        for x in self.__annotations_video:
-            print(x)
+                                cx_car = (actual_car[0][0] + actual_car[1][0]) // 2
+                                if last_i is not None:
+                                    if last_i >= 50:
+                                        lane_departure = True
+                                        if actual_car is not None:
+                                            if cx_car < width // 2:
+                                                departure_left = True
+                                            else:
+                                                departure_right = True
+                                    if cx_car < width // 2:
+                                        cars_on_left += 1
+                                        if np.mean(d) < 0:
+                                            approx = True
+                                            approx_left = True
+                                            if actual_i > 0 and np.mean(a) >= 0:
+                                                danger = True
+                                                danger_left = True
+                                    else:
+                                        cars_on_right += 1
+                                        if np.mean(d) < 0:
+                                            approx = True
+                                            approx_right = True
+                                            if actual_i > 0 and np.mean(a) >= 0:
+                                                danger = True
+                                                danger_right = True
+                    total_cars = car_in_lane + cars_on_left + cars_on_right
+                    writer.writerow({'frame': frame, 'danger': danger, 'danger_front': danger_front, 'danger_left': danger_left,
+                                     'danger_right': danger_right, 'lane_entry': lane_entry, 'entry_left': entry_left,
+                                     'entry_right': entry_right, 'lane_departure': lane_departure, 'departure_left': departure_left,
+                                     'departure_right': departure_right, 'approx': approx, 'approx_front': approx_front,
+                                     'approx_left': approx_left, 'approx_right': approx_right, 'total_cars': total_cars,
+                                     'car_in_lane': car_in_lane, 'cars_on_left': cars_on_left, 'cars_on_right': cars_on_right})
 
 
 def get_intersection_value(car, video_lanes):
